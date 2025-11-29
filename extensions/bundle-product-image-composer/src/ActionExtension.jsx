@@ -9,6 +9,10 @@ const img_url1 = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?f
 const img_url2 = "https://help.rangeme.com/hc/article_attachments/360006928633/what_makes_a_good_product_image.jpg";
 
 function Extension() {
+      const {i18n, close, data, extension: {target}} = shopify;
+  console.log({data});
+
+//  Objectdata: selected: Array(2)0: {id: 'gid://shopify/Product/8714529931462'}1: {id: 'gid://shopify/Product/8714439721158'}
   const [processingResult, setProcessingResult] = useState(null);
 
   async function processImages() {
