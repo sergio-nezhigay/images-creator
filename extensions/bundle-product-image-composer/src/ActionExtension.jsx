@@ -5,6 +5,9 @@ export default async () => {
   render(<Extension />, document.body);
 }
 
+const img_url1 = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8cHJvZHVjdHxlbnwwfHwwfHx8MA%3D%3D";
+const img_url2 = "https://help.rangeme.com/hc/article_attachments/360006928633/what_makes_a_good_product_image.jpg";
+
 function Extension() {
   const [health, setHealth] = useState(null);
   const [postResult, setPostResult] = useState(null);
