@@ -8,6 +8,36 @@ import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { processImages } from "../services/imageProcessor.server";
+
+// Action discriminator types
+type ActionType = "createProduct" | "processImages";
+
+// Image Processing Types
+type ImageProcessingSuccess = {
+  actionType: "processImages";
+  combinedImageUrl: string;
+  processedAt: string;
+};
+
+type ImageProcessingError = {
+  actionType: "processImages";
+  error: string;
+};
+
+// Product Creation Types
+type ProductCreationSuccess = {
+  actionType: "createProduct";
+  product: any;
+  variant: any;
+};
+
+// Union type for all possible action responses
+type ActionResponse =
+  | ImageProcessingSuccess
+  | ImageProcessingError
+  | ProductCreationSuccess
+  | { error: string };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -17,88 +47,201 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
+  const formData = await request.formData();
+  const actionType = formData.get("actionType") as string;
+
+  try {
+    switch (actionType) {
+      case "createProduct": {
+        // ===== EXISTING PRODUCT CREATION LOGIC =====
+        const color = ["Red", "Orange", "Yellow", "Green"][
+          Math.floor(Math.random() * 4)
+        ];
+
+        const response = await admin.graphql(
+          `#graphql
+            mutation populateProduct($product: ProductCreateInput!) {
+              productCreate(product: $product) {
+                product {
                   id
-                  price
-                  barcode
-                  createdAt
+                  title
+                  handle
+                  status
+                  variants(first: 10) {
+                    edges {
+                      node {
+                        id
+                        price
+                        barcode
+                        createdAt
+                      }
+                    }
+                  }
                 }
               }
+            }`,
+          {
+            variables: {
+              product: {
+                title: `${color} Snowboard`,
+              },
+            },
+          },
+        );
+
+        const responseJson = await response.json();
+        const product = responseJson.data!.productCreate!.product!;
+        const variantId = product.variants.edges[0]!.node!.id!;
+
+        const variantResponse = await admin.graphql(
+          `#graphql
+          mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              productVariants {
+                id
+                price
+                barcode
+                createdAt
+              }
             }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
+          }`,
+          {
+            variables: {
+              productId: product.id,
+              variants: [{ id: variantId, price: "100.00" }],
+            },
+          },
+        );
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
+        const variantResponseJson = await variantResponse.json();
 
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
+        return {
+          actionType: "createProduct" as const,
+          product: responseJson!.data!.productCreate!.product,
+          variant:
+            variantResponseJson!.data!.productVariantsBulkUpdate!
+              .productVariants,
+        };
       }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
 
-  const variantResponseJson = await variantResponse.json();
+      case "processImages": {
+        // ===== NEW IMAGE PROCESSING LOGIC =====
 
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
+        // Extract imageUrls from formData
+        const imageUrlsJson = formData.get("imageUrls");
+
+        // Validate payload exists
+        if (!imageUrlsJson || typeof imageUrlsJson !== "string") {
+          return {
+            actionType: "processImages" as const,
+            error: "No image URLs provided",
+          };
+        }
+
+        // Parse JSON array
+        let imageUrls: string[];
+        try {
+          imageUrls = JSON.parse(imageUrlsJson);
+        } catch {
+          return {
+            actionType: "processImages" as const,
+            error: "Invalid image URLs format",
+          };
+        }
+
+        // Additional validation
+        if (!Array.isArray(imageUrls)) {
+          return {
+            actionType: "processImages" as const,
+            error: "Image URLs must be an array",
+          };
+        }
+
+        // Call service
+        const result = await processImages(imageUrls);
+
+        // Return success response
+        return {
+          actionType: "processImages" as const,
+          ...result,
+        };
+      }
+
+      default:
+        return { error: "Unknown action type" };
+    }
+  } catch (error) {
+    // Error handling with console.log per CLAUDE.md
+    console.error("Action error:", error);
+
+    return {
+      actionType: actionType || "unknown",
+      error:
+        error instanceof Error ? error.message : "An unknown error occurred",
+    };
+  }
 };
 
 export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+  // ===== FETCHERS =====
+  const productFetcher = useFetcher<typeof action>();
+  const imageFetcher = useFetcher<typeof action>();
 
   const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
 
+  // ===== CONSTANTS =====
+  const TEST_IMAGE_URLS = [
+    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-1.png",
+    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-2.png",
+    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-3.png",
+  ];
+
+  // ===== LOADING STATES =====
+  const isCreatingProduct =
+    ["loading", "submitting"].includes(productFetcher.state) &&
+    productFetcher.formMethod === "POST";
+
+  const isProcessingImages =
+    ["loading", "submitting"].includes(imageFetcher.state) &&
+    imageFetcher.formMethod === "POST";
+
+  // ===== SIDE EFFECTS =====
+  // Toast for product creation
   useEffect(() => {
-    if (fetcher.data?.product?.id) {
+    if (
+      productFetcher.data?.actionType === "createProduct" &&
+      productFetcher.data?.product?.id
+    ) {
       shopify.toast.show("Product created");
     }
-  }, [fetcher.data?.product?.id, shopify]);
+  }, [productFetcher.data, shopify]);
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  // Toast for image processing
+  useEffect(() => {
+    if (imageFetcher.data?.actionType === "processImages") {
+      if ("error" in imageFetcher.data) {
+        shopify.toast.show(imageFetcher.data.error || "An error occurred", {
+          isError: true,
+        });
+      } else {
+        shopify.toast.show("Images processed successfully");
+      }
+    }
+  }, [imageFetcher.data, shopify]);
+
+  // ===== ACTION HANDLERS =====
+  const generateProduct = () => {
+    const formData = new FormData();
+    formData.append("actionType", "createProduct");
+    productFetcher.submit(formData, { method: "POST" });
+  };
+
+  const processImagesHandler = () => {
+    const formData = new FormData();
+    formData.append("actionType", "processImages");
+    formData.append("imageUrls", JSON.stringify(TEST_IMAGE_URLS));
+    imageFetcher.submit(formData, { method: "POST" });
+  };
 
   return (
     <s-page heading="Shopify app template">
@@ -142,52 +285,133 @@ export default function Index() {
         <s-stack direction="inline" gap="base">
           <s-button
             onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
+            {...(isCreatingProduct ? { loading: true } : {})}
           >
             Generate a product
           </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
+          {productFetcher.data?.actionType === "createProduct" &&
+            productFetcher.data?.product && (
+              <s-button
+                onClick={() => {
+                  shopify.intents.invoke?.("edit:shopify/Product", {
+                    value: productFetcher.data?.product?.id,
+                  });
+                }}
+                target="_blank"
+                variant="tertiary"
+              >
+                Edit product
+              </s-button>
+            )}
+        </s-stack>
+        {productFetcher.data?.actionType === "createProduct" &&
+          productFetcher.data?.product && (
+            <s-section heading="productCreate mutation">
+              <s-stack direction="block" gap="base">
+                <s-box
+                  padding="base"
+                  borderWidth="base"
+                  borderRadius="base"
+                  background="subdued"
+                >
+                  <pre style={{ margin: 0 }}>
+                    <code>
+                      {JSON.stringify(productFetcher.data.product, null, 2)}
+                    </code>
+                  </pre>
+                </s-box>
+
+                <s-heading>productVariantsBulkUpdate mutation</s-heading>
+                <s-box
+                  padding="base"
+                  borderWidth="base"
+                  borderRadius="base"
+                  background="subdued"
+                >
+                  <pre style={{ margin: 0 }}>
+                    <code>
+                      {JSON.stringify(productFetcher.data.variant, null, 2)}
+                    </code>
+                  </pre>
+                </s-box>
+              </s-stack>
+            </s-section>
+          )}
+      </s-section>
+
+      <s-section heading="Image Processing">
+        <s-paragraph>
+          Process multiple images and combine them into a single image. This
+          demo uses a placeholder service that returns a mock combined image
+          URL.
+        </s-paragraph>
+
+        <s-stack direction="block" gap="base">
+          <div>
+            <strong>Test Image URLs</strong>
+            <s-box
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
             >
-              Edit product
-            </s-button>
+              <s-stack direction="block" gap="base">
+                {TEST_IMAGE_URLS.map((url, index) => (
+                  <s-text key={index}>
+                    {index + 1}. {url}
+                  </s-text>
+                ))}
+              </s-stack>
+            </s-box>
+          </div>
+
+          <s-button
+            onClick={processImagesHandler}
+            {...(isProcessingImages ? { loading: true } : {})}
+          >
+            Process Images
+          </s-button>
+
+          {imageFetcher.data?.actionType === "processImages" && (
+            <>
+              {"error" in imageFetcher.data ? (
+                <s-banner tone="critical">
+                  <s-text>{imageFetcher.data.error}</s-text>
+                </s-banner>
+              ) : (
+                <s-stack direction="block" gap="base">
+                  <strong>Processing Result</strong>
+                  <s-box
+                    padding="base"
+                    borderWidth="base"
+                    borderRadius="base"
+                    background="subdued"
+                  >
+                    <s-stack direction="block" gap="base">
+                      <div>
+                        <s-text>
+                          <strong>Combined Image URL:</strong>
+                        </s-text>
+                        <s-link
+                          href={imageFetcher.data.combinedImageUrl}
+                          target="_blank"
+                        >
+                          {imageFetcher.data.combinedImageUrl}
+                        </s-link>
+                      </div>
+                      <s-text>
+                        <strong>Processed At:</strong>{" "}
+                        {new Date(
+                          imageFetcher.data.processedAt
+                        ).toLocaleString()}
+                      </s-text>
+                    </s-stack>
+                  </s-box>
+                </s-stack>
+              )}
+            </>
           )}
         </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
       </s-section>
 
       <s-section slot="aside" heading="App template specs">
