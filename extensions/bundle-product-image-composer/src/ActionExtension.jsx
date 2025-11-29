@@ -13,6 +13,9 @@ function Extension() {
   const [loadingImages, setLoadingImages] = useState(true);
   const [imageError, setImageError] = useState(null);
 
+  const [processing, setProcessing] = useState(false);
+  const [currentStep, setCurrentStep] = useState('');
+  const [processedCount, setProcessedCount] = useState(0);
   const [processingResults, setProcessingResults] = useState([]);
 
   useEffect(() => {
@@ -72,19 +75,26 @@ function Extension() {
     loadImages();
   }, [data.selected]);
 
-  async function processAllProducts() {
+  async function generateAndUpdateBundles() {
     if (products.length === 0) {
       setProcessingResults([{ error: 'No products available to process' }]);
       return;
     }
 
     try {
+      setProcessing(true);
+      setProcessingResults([]);
+      setProcessedCount(0);
+
       console.log('[Extension] Processing products:', products.length);
 
       const results = [];
 
       // Process each product separately
-      for (const product of products) {
+      for (let i = 0; i < products.length; i++) {
+        const product = products[i];
+        const productNum = i + 1;
+
         console.log('[Extension] Processing product:', {
           productId: product.productId,
           productTitle: product.productTitle,
@@ -92,48 +102,115 @@ function Extension() {
         });
 
         try {
-          const res = await fetch("/app/api/image-process", {
+          // Step 1: Generate composite image
+          setCurrentStep(`Generating composite ${productNum} of ${products.length}...`);
+
+          const processRes = await fetch("/app/api/image-process", {
             method: "POST",
             body: JSON.stringify({
               imageUrls: product.imageUrls
             })
           });
 
-          if (!res.ok) {
+          if (!processRes.ok) {
             results.push({
               productId: product.productId,
               productTitle: product.productTitle,
-              error: `Error: ${res.status}`
+              success: false,
+              error: `Failed to generate composite: ${processRes.status}`
             });
+            setProcessedCount(productNum);
             continue;
           }
 
-          const data = await res.json();
-          results.push({
-            productId: product.productId,
-            productTitle: product.productTitle,
-            ...data
+          const processData = await processRes.json();
+          const combinedImageUrl = processData.combinedImageUrl;
+
+          if (!combinedImageUrl) {
+            results.push({
+              productId: product.productId,
+              productTitle: product.productTitle,
+              success: false,
+              error: 'No composite image URL returned'
+            });
+            setProcessedCount(productNum);
+            continue;
+          }
+
+          console.log('[Extension] Composite generated:', combinedImageUrl);
+
+          // Step 2: Update product with composite image
+          setCurrentStep(`Updating product ${productNum} of ${products.length}...`);
+
+          const altText = `${product.productTitle} Bundle Components`;
+
+          const updateRes = await fetch("/app/api/update-product-image", {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productId: product.productId,
+              imageUrl: combinedImageUrl,
+              altText: altText
+            })
           });
 
-          console.log('[Extension] Product processed:', {
+          if (!updateRes.ok) {
+            results.push({
+              productId: product.productId,
+              productTitle: product.productTitle,
+              success: false,
+              combinedImageUrl: combinedImageUrl,
+              error: `Failed to update product: ${updateRes.status}`
+            });
+            setProcessedCount(productNum);
+            continue;
+          }
+
+          const updateData = await updateRes.json();
+
+          if (updateData.success) {
+            results.push({
+              productId: product.productId,
+              productTitle: product.productTitle,
+              success: true,
+              combinedImageUrl: combinedImageUrl,
+              mediaCount: updateData.mediaCount
+            });
+          } else {
+            results.push({
+              productId: product.productId,
+              productTitle: product.productTitle,
+              success: false,
+              combinedImageUrl: combinedImageUrl,
+              error: updateData.error || 'Update failed'
+            });
+          }
+
+          setProcessedCount(productNum);
+          console.log('[Extension] Product updated:', {
             productId: product.productId,
-            result: data
+            success: updateData.success
           });
         } catch (err) {
           console.error('[Extension] Error processing product:', err);
           results.push({
             productId: product.productId,
             productTitle: product.productTitle,
+            success: false,
             error: err.message
           });
+          setProcessedCount(productNum);
         }
       }
 
       setProcessingResults(results);
+      setCurrentStep('');
       console.log('[Extension] All products processed:', results.length);
     } catch (err) {
       console.error('[Extension] Processing error:', err);
       setProcessingResults([{ error: err.message }]);
+    } finally {
+      setProcessing(false);
     }
   }
 
@@ -163,29 +240,55 @@ function Extension() {
         )}
 
         {/* Show products details */}
-        {!loadingImages && !imageError && products.length > 0 && (
+        {!loadingImages && !imageError && products.length > 0 && !processing && processingResults.length === 0 && (
           <s-stack direction="block">
+            <s-text type="subdued">Ready to process:</s-text>
             {products.map((product, index) => (
               <s-text key={product.productId}>
-                {index + 1}. {product.productTitle} - {product.imageUrls.length} images
+                • {product.productTitle} ({product.imageUrls.length} component images)
               </s-text>
             ))}
           </s-stack>
         )}
 
+        {/* Processing progress */}
+        {processing && currentStep && (
+          <s-banner tone="info">
+            <s-text>{currentStep}</s-text>
+            {processedCount > 0 && (
+              <s-text type="subdued">
+                Completed: {processedCount} of {products.length}
+              </s-text>
+            )}
+          </s-banner>
+        )}
+
         {/* Processing results */}
         {processingResults.length > 0 && (
           <s-stack direction="block">
-            <s-text type="strong">Combined Images:</s-text>
+            <s-text type="strong">Results:</s-text>
             {processingResults.map((result, index) => (
               <s-stack direction="block" key={result.productId || index}>
-                <s-text type="strong">{result.productTitle}</s-text>
-                {result.combinedImageUrl ? (
-                  <s-link url={result.combinedImageUrl} target="_blank">
-                    {result.combinedImageUrl}
-                  </s-link>
+                {result.success ? (
+                  <>
+                    <s-text>✅ {result.productTitle}</s-text>
+                    <s-text type="subdued">Composite image saved to product</s-text>
+                    {result.combinedImageUrl && (
+                      <s-link url={result.combinedImageUrl} target="_blank">
+                        View composite image
+                      </s-link>
+                    )}
+                  </>
                 ) : (
-                  <s-text tone="critical">Error: {result.error || 'No image URL'}</s-text>
+                  <>
+                    <s-text tone="critical">❌ {result.productTitle}</s-text>
+                    <s-text tone="critical" type="subdued">Error: {result.error || 'Unknown error'}</s-text>
+                    {result.combinedImageUrl && (
+                      <s-link url={result.combinedImageUrl} target="_blank">
+                        View composite image (not saved)
+                      </s-link>
+                    )}
+                  </>
                 )}
               </s-stack>
             ))}
@@ -204,10 +307,10 @@ function Extension() {
       </s-button>
 
       <s-button
-        onClick={processAllProducts}
-        disabled={loadingImages || products.length === 0}
+        onClick={generateAndUpdateBundles}
+        disabled={loadingImages || products.length === 0 || processing}
       >
-        Process All Products
+        {processing ? 'Processing...' : 'Generate & Update Bundle Images'}
       </s-button>
 
       <s-button
@@ -222,31 +325,3 @@ function Extension() {
     </s-admin-action>
   );
 }
-
-//mutation {
-//  productUpdate(
-//    product: { id: "gid://shopify/Product/10214566887740" },
-//    media: [{
-//      originalSource: "https://i.ibb.co/svPcvY7t/66d9ac1fff0e.png",
-//      alt: "Descriptive alt text",
-//      mediaContentType: IMAGE
-//    }]
-//  ) {
-//    product {
-//      id
-//      media(first: 5) {
-//        nodes {
-//          alt
-//          mediaContentType
-//          preview {
-//            status
-//          }
-//        }
-//      }
-//    }
-//    userErrors {
-//      field
-//      message
-//    }
-//  }
-//}
