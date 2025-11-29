@@ -16,9 +16,15 @@ type ComponentImage = {
   altText: string | null;
 };
 
+type ProductImages = {
+  productId: string;
+  productTitle: string;
+  componentImages: ComponentImage[];
+  imageUrls: string[]; // URLs for this product only
+};
+
 type FetchBundleImagesSuccess = {
-  images: ComponentImage[];
-  imageUrls: string[]; // Flat array for easy consumption
+  products: ProductImages[]; // Grouped by product
   metadata: {
     requestedProducts: number;
     productsFound: number;
@@ -132,9 +138,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     // Fetch images from each product
-    const allImages: ComponentImage[] = [];
+    const productsWithImages: ProductImages[] = [];
     let productsFound = 0;
     let componentsFound = 0;
+    let totalImagesFound = 0;
 
     for (const productId of productIds) {
       const response = await admin.graphql(
@@ -191,6 +198,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         componentCount: components.length,
       });
 
+      // Collect images for this specific product
+      const productImages: ComponentImage[] = [];
+
       for (const edge of components) {
         componentsFound++;
         const componentProduct = edge.node.componentProduct;
@@ -201,7 +211,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           continue;
         }
 
-        allImages.push({
+        productImages.push({
           productId: product.id,
           productTitle: product.title,
           componentProductId: componentProduct.id,
@@ -210,23 +220,39 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           altText: featuredMedia.image.altText,
         });
       }
+
+      // Only add product if it has images
+      if (productImages.length > 0) {
+        const imageUrls = productImages.map((img) => img.imageUrl);
+        totalImagesFound += imageUrls.length;
+
+        productsWithImages.push({
+          productId: product.id,
+          productTitle: product.title,
+          componentImages: productImages,
+          imageUrls,
+        });
+
+        console.log("[Fetch Bundle Images] Product images collected:", {
+          productId: product.id,
+          productTitle: product.title,
+          imageCount: imageUrls.length,
+        });
+      }
     }
 
-    const imageUrls = allImages.map((img) => img.imageUrl);
-
-    console.log("[Fetch Bundle Images] Extracted images:", {
-      total: imageUrls.length,
-      urls: imageUrls,
+    console.log("[Fetch Bundle Images] Total extracted:", {
+      productsWithImages: productsWithImages.length,
+      totalImages: totalImagesFound,
     });
 
     const result: FetchBundleImagesSuccess = {
-      images: allImages,
-      imageUrls,
+      products: productsWithImages,
       metadata: {
         requestedProducts: productIds.length,
         productsFound,
         componentsFound,
-        imagesFound: imageUrls.length,
+        imagesFound: totalImagesFound,
       },
     };
 
