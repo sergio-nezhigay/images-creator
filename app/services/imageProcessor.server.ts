@@ -57,8 +57,8 @@ function calculateGridLayout(imageCount: number): GridLayout {
     rows = Math.ceil(imageCount / cols);
   }
 
-  const cellWidth = 400;
-  const cellHeight = 400;
+  const cellWidth = 1024;
+  const cellHeight = 1024;
   const canvasWidth = cols * cellWidth;
   const canvasHeight = rows * cellHeight;
 
