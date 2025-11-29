@@ -6,42 +6,32 @@ export default async () => {
 }
 
 function Extension() {
-  const {i18n, close, data, extension: {target}} = shopify;
-  console.log({data});
-  const [productTitle, setProductTitle] = useState('');
-  // Use direct API calls to fetch data from Shopify.
-  // See https://shopify.dev/docs/api/admin-graphql for more information about Shopify's GraphQL API
-  useEffect(() => {
-    (async function getProductInfo() {
-      const getProductQuery = {
-        query: `query Product($id: ID!) {
-          product(id: $id) {
-            title
-          }
-        }`,
-        variables: {id: data.selected[0].id},
-      };
+  const [health, setHealth] = useState(null);
 
-      const res = await fetch("shopify:admin/api/graphql.json", {
-        method: "POST",
-        body: JSON.stringify(getProductQuery),
+  useEffect(() => {
+    (async function fetchHealth() {
+
+      const res = await fetch("/app/api/extension-data", {
+        method: "GET",
+
       });
 
       if (!res.ok) {
         console.error('Network error');
+        return;
       }
 
-      const productData = await res.json();
-      setProductTitle(productData.data.product.title);
+      const healthData = await res.json();
+      setHealth(healthData);
     })();
-  }, [data.selected]);
+  }, []);
   return (
     // The AdminAction component provides an API for setting the title and actions of the Action extension wrapper.
     <s-admin-action>
       <s-stack direction="block">
-        {/* Set the translation values for each supported language in the locales directory */}
-        <s-text type="strong">{i18n.translate('welcome', {target})}</s-text>
-        <s-text>Current product: {productTitle}</s-text>
+
+
+        <s-text type="strong">{JSON.stringify(health, null, 2)}</s-text>
       </s-stack>
       <s-button slot="primary-action" onClick={() => {
           console.log('saving');

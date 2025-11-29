@@ -1,11 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch",
-      "Bash(npm run typecheck:*)",
-      "Bash(npm install:*)"
+      "Bash(Select-Object Id, ProcessName, StartTime)",
+      "Bash(Format-Table)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "shopify-dev-mcp"
+  ]
 }
