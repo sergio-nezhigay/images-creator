@@ -11,7 +11,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { processImages } from "../services/imageProcessor.server";
 
 // Action discriminator types
-type ActionType = "createProduct" | "processImages";
+type ActionType = "processImages";
 
 // Image Processing Types
 type ImageProcessingSuccess = {
@@ -25,18 +25,13 @@ type ImageProcessingError = {
   error: string;
 };
 
-// Product Creation Types
-type ProductCreationSuccess = {
-  actionType: "createProduct";
-  product: any;
-  variant: any;
-};
+
 
 // Union type for all possible action responses
 type ActionResponse =
   | ImageProcessingSuccess
   | ImageProcessingError
-  | ProductCreationSuccess
+
   | { error: string };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -46,83 +41,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  await authenticate.admin(request);
   const formData = await request.formData();
   const actionType = formData.get("actionType") as string;
 
   try {
     switch (actionType) {
-      case "createProduct": {
-        // ===== EXISTING PRODUCT CREATION LOGIC =====
-        const color = ["Red", "Orange", "Yellow", "Green"][
-          Math.floor(Math.random() * 4)
-        ];
 
-        const response = await admin.graphql(
-          `#graphql
-            mutation populateProduct($product: ProductCreateInput!) {
-              productCreate(product: $product) {
-                product {
-                  id
-                  title
-                  handle
-                  status
-                  variants(first: 10) {
-                    edges {
-                      node {
-                        id
-                        price
-                        barcode
-                        createdAt
-                      }
-                    }
-                  }
-                }
-              }
-            }`,
-          {
-            variables: {
-              product: {
-                title: `${color} Snowboard`,
-              },
-            },
-          },
-        );
-
-        const responseJson = await response.json();
-        const product = responseJson.data!.productCreate!.product!;
-        const variantId = product.variants.edges[0]!.node!.id!;
-
-        const variantResponse = await admin.graphql(
-          `#graphql
-          mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-              productVariants {
-                id
-                price
-                barcode
-                createdAt
-              }
-            }
-          }`,
-          {
-            variables: {
-              productId: product.id,
-              variants: [{ id: variantId, price: "100.00" }],
-            },
-          },
-        );
-
-        const variantResponseJson = await variantResponse.json();
-
-        return {
-          actionType: "createProduct" as const,
-          product: responseJson!.data!.productCreate!.product,
-          variant:
-            variantResponseJson!.data!.productVariantsBulkUpdate!
-              .productVariants,
-        };
-      }
 
       case "processImages": {
         // ===== NEW IMAGE PROCESSING LOGIC =====
@@ -184,7 +109,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   // ===== FETCHERS =====
-  const productFetcher = useFetcher<typeof action>();
+
   const imageFetcher = useFetcher<typeof action>();
 
   const shopify = useAppBridge();
@@ -193,12 +118,11 @@ export default function Index() {
   const TEST_IMAGE_URLS = [
     "https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg",
     "https://images.unsplash.com/photo-1505740420928-5e560c06d30e",
+    "https://www.shutterstock.com/image-photo/facial-cosmetic-products-containers-on-600nw-2566963627.jpg"
   ];
 
   // ===== LOADING STATES =====
-  const isCreatingProduct =
-    ["loading", "submitting"].includes(productFetcher.state) &&
-    productFetcher.formMethod === "POST";
+
 
   const isProcessingImages =
     ["loading", "submitting"].includes(imageFetcher.state) &&
@@ -206,14 +130,7 @@ export default function Index() {
 
   // ===== SIDE EFFECTS =====
   // Toast for product creation
-  useEffect(() => {
-    if (
-      productFetcher.data?.actionType === "createProduct" &&
-      productFetcher.data?.product?.id
-    ) {
-      shopify.toast.show("Product created");
-    }
-  }, [productFetcher.data, shopify]);
+
 
   // Toast for image processing
   useEffect(() => {
@@ -229,11 +146,7 @@ export default function Index() {
   }, [imageFetcher.data, shopify]);
 
   // ===== ACTION HANDLERS =====
-  const generateProduct = () => {
-    const formData = new FormData();
-    formData.append("actionType", "createProduct");
-    productFetcher.submit(formData, { method: "POST" });
-  };
+
 
   const processImagesHandler = () => {
     const formData = new FormData();
@@ -244,99 +157,9 @@ export default function Index() {
 
   return (
     <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isCreatingProduct ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {productFetcher.data?.actionType === "createProduct" &&
-            productFetcher.data?.product && (
-              <s-button
-                onClick={() => {
-                  shopify.intents.invoke?.("edit:shopify/Product", {
-                    value: productFetcher.data?.product?.id,
-                  });
-                }}
-                target="_blank"
-                variant="tertiary"
-              >
-                Edit product
-              </s-button>
-            )}
-        </s-stack>
-        {productFetcher.data?.actionType === "createProduct" &&
-          productFetcher.data?.product && (
-            <s-section heading="productCreate mutation">
-              <s-stack direction="block" gap="base">
-                <s-box
-                  padding="base"
-                  borderWidth="base"
-                  borderRadius="base"
-                  background="subdued"
-                >
-                  <pre style={{ margin: 0 }}>
-                    <code>
-                      {JSON.stringify(productFetcher.data.product, null, 2)}
-                    </code>
-                  </pre>
-                </s-box>
 
-                <s-heading>productVariantsBulkUpdate mutation</s-heading>
-                <s-box
-                  padding="base"
-                  borderWidth="base"
-                  borderRadius="base"
-                  background="subdued"
-                >
-                  <pre style={{ margin: 0 }}>
-                    <code>
-                      {JSON.stringify(productFetcher.data.variant, null, 2)}
-                    </code>
-                  </pre>
-                </s-box>
-              </s-stack>
-            </s-section>
-          )}
-      </s-section>
+
 
       <s-section heading="Image Processing">
         <s-paragraph>
@@ -454,61 +277,7 @@ export default function Index() {
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
 
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
     </s-page>
   );
 }
