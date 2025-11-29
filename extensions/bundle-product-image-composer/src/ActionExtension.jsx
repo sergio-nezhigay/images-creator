@@ -222,3 +222,31 @@ function Extension() {
     </s-admin-action>
   );
 }
+
+//mutation {
+//  productUpdate(
+//    product: { id: "gid://shopify/Product/10214566887740" },
+//    media: [{
+//      originalSource: "https://i.ibb.co/svPcvY7t/66d9ac1fff0e.png",
+//      alt: "Descriptive alt text",
+//      mediaContentType: IMAGE
+//    }]
+//  ) {
+//    product {
+//      id
+//      media(first: 5) {
+//        nodes {
+//          alt
+//          mediaContentType
+//          preview {
+//            status
+//          }
+//        }
+//      }
+//    }
+//    userErrors {
+//      field
+//      message
+//    }
+//  }
+//}
