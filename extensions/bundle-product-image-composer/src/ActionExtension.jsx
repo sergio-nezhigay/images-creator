@@ -176,12 +176,18 @@ function Extension() {
         {/* Processing results */}
         {processingResults.length > 0 && (
           <s-stack direction="block">
-            <s-text type="strong">Processing Results:</s-text>
+            <s-text type="strong">Combined Images:</s-text>
             {processingResults.map((result, index) => (
-              <s-text key={result.productId || index}>
-                {result.productTitle && `${result.productTitle}: `}
-                {JSON.stringify(result, null, 2)}
-              </s-text>
+              <s-stack direction="block" key={result.productId || index}>
+                <s-text type="strong">{result.productTitle}</s-text>
+                {result.combinedImageUrl ? (
+                  <s-link url={result.combinedImageUrl} target="_blank">
+                    {result.combinedImageUrl}
+                  </s-link>
+                ) : (
+                  <s-text tone="critical">Error: {result.error || 'No image URL'}</s-text>
+                )}
+              </s-stack>
             ))}
           </s-stack>
         )}
