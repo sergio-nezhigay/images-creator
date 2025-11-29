@@ -381,6 +381,31 @@ export default function Index() {
               ) : (
                 <s-stack direction="block" gap="base">
                   <strong>Processing Result</strong>
+
+                  {imageFetcher.data.metadata && (
+                    <s-box
+                      padding="base"
+                      borderWidth="base"
+                      borderRadius="base"
+                      background="subdued"
+                    >
+                      <s-stack direction="block" gap="base">
+                        <s-text>
+                          <strong>API Used:</strong>{" "}
+                          {imageFetcher.data.metadata.apiUsed}
+                        </s-text>
+                        <s-text>
+                          <strong>Processing Method:</strong>{" "}
+                          {imageFetcher.data.metadata.processingMethod}
+                        </s-text>
+                        <s-text>
+                          <strong>Images Processed:</strong>{" "}
+                          {imageFetcher.data.metadata.originalCount}
+                        </s-text>
+                      </s-stack>
+                    </s-box>
+                  )}
+
                   <s-box
                     padding="base"
                     borderWidth="base"
@@ -405,6 +430,22 @@ export default function Index() {
                           imageFetcher.data.processedAt
                         ).toLocaleString()}
                       </s-text>
+
+                      <div>
+                        <s-text>
+                          <strong>Preview:</strong>
+                        </s-text>
+                        <img
+                          src={imageFetcher.data.combinedImageUrl}
+                          alt="Combined result"
+                          style={{
+                            maxWidth: "100%",
+                            height: "auto",
+                            marginTop: "8px",
+                            borderRadius: "8px",
+                          }}
+                        />
+                      </div>
                     </s-stack>
                   </s-box>
                 </s-stack>
