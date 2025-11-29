@@ -41,8 +41,8 @@ function calculateGridLayout(imageCount: number): GridLayout {
     cols = 2;
     rows = 1;
   } else if (imageCount === 3) {
-    cols = 3;
-    rows = 1;
+    cols = 2;
+    rows = 2;
   } else if (imageCount === 4) {
     cols = 2;
     rows = 2;
