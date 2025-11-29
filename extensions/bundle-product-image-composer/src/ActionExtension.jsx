@@ -11,6 +11,7 @@ const img_url2 = "https://help.rangeme.com/hc/article_attachments/360006928633/w
 function Extension() {
   const [health, setHealth] = useState(null);
   const [postResult, setPostResult] = useState(null);
+  const [processingResult, setProcessingResult] = useState(null);
 
   useEffect(() => {
     (async function fetchHealth() {
@@ -54,6 +55,28 @@ function Extension() {
     }
   }
 
+  async function processImages() {
+    try {
+      setProcessingResult({ status: 'processing' });
+      const res = await fetch("/app/api/image-process", {
+        method: "POST",
+        body: JSON.stringify({
+          imageUrls: [img_url1, img_url2]
+        })
+      });
+
+      if (!res.ok) {
+        setProcessingResult({ error: `Error: ${res.status}` });
+        return;
+      }
+
+      const data = await res.json();
+      setProcessingResult(data);
+    } catch (err) {
+      setProcessingResult({ error: err.message });
+    }
+  }
+
   return (
     // The AdminAction component provides an API for setting the title and actions of the Action extension wrapper.
     <s-admin-action>
@@ -64,12 +87,16 @@ function Extension() {
         {postResult && (
           <s-text type="strong">POST Result: {JSON.stringify(postResult, null, 2)}</s-text>
         )}
+        {processingResult && (
+          <s-text type="strong">Processing Result: {JSON.stringify(processingResult, null, 2)}</s-text>
+        )}
       </s-stack>
       <s-button slot="primary-action" onClick={() => {
           console.log('saving');
           close();
         }}>Done</s-button>
       <s-button onClick={testPostRequest}>Test POST</s-button>
+      <s-button onClick={processImages}>Process Images</s-button>
       <s-button slot="secondary-actions" onClick={() => {
           console.log('closing');
           close();
