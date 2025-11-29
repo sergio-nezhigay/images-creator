@@ -191,9 +191,8 @@ export default function Index() {
 
   // ===== CONSTANTS =====
   const TEST_IMAGE_URLS = [
-    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-1.png",
-    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-2.png",
-    "https://cdn.shopify.com/s/files/1/0757/9955/files/placeholder-image-3.png",
+    "https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg",
+    "https://images.unsplash.com/photo-1505740420928-5e560c06d30e",
   ];
 
   // ===== LOADING STATES =====

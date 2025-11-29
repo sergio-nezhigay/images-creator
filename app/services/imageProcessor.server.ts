@@ -14,6 +14,8 @@
  * ==============================================================
  */
 
+import { v2 as cloudinary } from 'cloudinary';
+
 export type ProcessImageResult = {
   combinedImageUrl: string;
   processedAt: string;
@@ -23,6 +25,72 @@ export type ProcessImageResult = {
     apiUsed?: string;
   };
 };
+
+interface GridLayout {
+  rows: number;
+  cols: number;
+  cellWidth: number;
+  cellHeight: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  positions: Array<{ x: number; y: number }>;
+}
+
+/**
+ * Calculates optimal grid layout for given number of images
+ */
+function calculateGridLayout(imageCount: number): GridLayout {
+  let cols: number;
+  let rows: number;
+
+  if (imageCount === 1) {
+    cols = 1;
+    rows = 1;
+  } else if (imageCount === 2) {
+    cols = 2;
+    rows = 1;
+  } else if (imageCount === 3) {
+    cols = 3;
+    rows = 1;
+  } else if (imageCount === 4) {
+    cols = 2;
+    rows = 2;
+  } else if (imageCount <= 6) {
+    cols = 3;
+    rows = 2;
+  } else if (imageCount <= 9) {
+    cols = 3;
+    rows = 3;
+  } else {
+    cols = Math.ceil(Math.sqrt(imageCount));
+    rows = Math.ceil(imageCount / cols);
+  }
+
+  const cellWidth = 400;
+  const cellHeight = 400;
+  const canvasWidth = cols * cellWidth;
+  const canvasHeight = rows * cellHeight;
+
+  const positions: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < imageCount; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    positions.push({
+      x: col * cellWidth,
+      y: row * cellHeight,
+    });
+  }
+
+  return {
+    rows,
+    cols,
+    cellWidth,
+    cellHeight,
+    canvasWidth,
+    canvasHeight,
+    positions,
+  };
+}
 
 /**
  * Processes multiple image URLs and combines them into a single image
@@ -104,76 +172,101 @@ export async function processImages(
     }
   }
 
-  // ===== CLOUDINARY EXAMPLE (Commented - Requires API Key) =====
+  // ===== CLOUDINARY: Real Image Composition with Grid Layout =====
 
   if (apiMode === "cloudinary") {
-    // CLOUDINARY SETUP:
-    // 1. Sign up at https://cloudinary.com (free tier available)
-    // 2. Get your cloud name, API key, and secret
-    // 3. Set environment variables:
-    //    - CLOUDINARY_CLOUD_NAME=your_cloud_name
-    //    - CLOUDINARY_API_KEY=your_api_key
-    //    - CLOUDINARY_API_SECRET=your_api_secret
-    // 4. Install: npm install cloudinary
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
-    /*
-    import { v2 as cloudinary } from 'cloudinary';
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error(
+        "Cloudinary configuration missing. Required: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET"
+      );
+    }
 
-    // Configure Cloudinary
     cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
     });
 
     try {
-      // Upload images to Cloudinary
-      const uploadPromises = imageUrls.map((url) =>
+      console.log(`Uploading ${imageUrls.length} images to Cloudinary...`);
+
+      // Upload all images in parallel
+      const uploadPromises = imageUrls.map((url, index) =>
         cloudinary.uploader.upload(url, {
-          folder: 'image-processing',
+          folder: "image-processing",
+          public_id: `grid_${Date.now()}_${index}`,
+          resource_type: "image",
         })
       );
 
       const uploads = await Promise.all(uploadPromises);
       const publicIds = uploads.map((u) => u.public_id);
 
-      // Create a combined image using transformations
-      const baseImage = publicIds[0];
-      const overlayTransformations = publicIds.slice(1).map((id, index) => ({
-        overlay: id.replace(/\//g, ':'),
-        width: 400,
-        height: 400,
-        x: (index + 1) * 400,
-        crop: 'fill',
-      }));
+      console.log(`Uploaded ${publicIds.length} images:`, publicIds);
 
-      const combinedUrl = cloudinary.url(baseImage, {
-        transformation: [
-          { width: 400, height: 400, crop: 'fill' },
-          ...overlayTransformations,
-        ],
+      // Calculate grid layout
+      const layout = calculateGridLayout(imageUrls.length);
+      console.log(
+        `Grid layout: ${layout.cols}x${layout.rows} (${layout.canvasWidth}x${layout.canvasHeight})`
+      );
+
+      // Build transformation chain
+      const baseImageId = publicIds[0];
+
+      const transformations: any[] = [
+        {
+          width: layout.cellWidth,
+          height: layout.cellHeight,
+          crop: "fill",
+          gravity: "auto",
+        },
+      ];
+
+      // Add overlays for remaining images
+      for (let i = 1; i < publicIds.length; i++) {
+        const position = layout.positions[i];
+
+        transformations.push({
+          overlay: publicIds[i].replace(/\//g, ":"),
+          width: layout.cellWidth,
+          height: layout.cellHeight,
+          crop: "fill",
+          gravity: "north_west",
+          x: position.x,
+          y: position.y,
+        });
+      }
+
+      // Generate composed image URL
+      const combinedUrl = cloudinary.url(baseImageId, {
+        transformation: transformations,
+        width: layout.canvasWidth,
+        height: layout.canvasHeight,
       });
 
-      console.log(`Cloudinary combined URL: ${combinedUrl}`);
+      console.log(`Cloudinary composed image URL: ${combinedUrl}`);
 
       return {
         combinedImageUrl: combinedUrl,
         processedAt: new Date().toISOString(),
         metadata: {
           originalCount: imageUrls.length,
-          processingMethod: 'cloudinary-overlay',
-          apiUsed: 'Cloudinary',
+          processingMethod: `cloudinary-grid-${layout.cols}x${layout.rows}`,
+          apiUsed: "Cloudinary",
         },
       };
     } catch (error) {
-      console.error('Cloudinary API error:', error);
-      throw new Error(`Cloudinary processing failed: ${error.message}`);
+      console.error("Cloudinary API error:", error);
+      throw new Error(
+        `Cloudinary processing failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
-    */
-
-    throw new Error(
-      "Cloudinary mode requires CLOUDINARY_* environment variables to be set"
-    );
   }
 
   // ===== IMGBB EXAMPLE (Commented - Requires API Key) =====
